@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 """
-python lib/dummycve.py \
+python lib/dummytemplate.py \
     tenant
 
 output:
 {
-  "cves": [
-        { "key": "CVE-2024-8260", "component": "comp2" }
-    ]
+  "template": {
+    "synopsis": "testing title"
+  }
 }
 """
 
@@ -18,7 +18,7 @@ import requests
 
 
 def dummy():
-    parser = argparse.ArgumentParser(description='dummy cve collector')
+    parser = argparse.ArgumentParser(description='dummy template collector')
     parser.add_argument(
         "mode",
         choices=["managed", "tenant"],
@@ -32,8 +32,9 @@ def dummy():
 
 def create_json_record():
     data = {
-        "cves":
-            [{ "key": "CVE-2024-8260", "component": "comp2" }]
+        "template": {
+            "synopsis": "testing title"
+        }
     }
     return data
 

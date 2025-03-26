@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-python lib/dummy.py \
+python lib/dummyjira.py \
     tenant
 
 output:
