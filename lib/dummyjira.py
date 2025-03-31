@@ -48,11 +48,13 @@ def create_json_record():
     }
     """
     data = {
-        "issues": {
-            "fixed":
-                [
-                    { "id": "RELEASE-1502", "source": "issues.redhat.com" }
-                ]
+        "releaseNotes": {
+            "issues": {
+                "fixed":
+                    [
+                        { "id": "RELEASE-1502", "source": "issues.redhat.com" }
+                    ]
+            }
         }
     }
     return data

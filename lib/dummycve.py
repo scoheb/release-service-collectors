@@ -32,8 +32,15 @@ def dummy():
 
 def create_json_record():
     data = {
-        "cves":
-            [{ "key": "CVE-2024-8260", "component": "comp2" }]
+        "releaseNotes": {
+            "cves":
+                [
+                    {
+                        "key": "CVE-2024-8260",
+                        "component": "comp2"
+                    }
+                ]
+        }
     }
     return data
 
