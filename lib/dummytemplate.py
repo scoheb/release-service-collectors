@@ -33,9 +33,8 @@ def dummy():
 def create_json_record():
     data = {
         "releaseNotes": {
-            "template": {
-                "synopsis": "testing title"
-            }
+            "topic": "testing topic",
+            "description": "testing description"
         }
     }
     return data
