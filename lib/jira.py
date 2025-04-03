@@ -47,7 +47,8 @@ def search_issues():
 
     issues =  query_jira(args['url'], args['query'], args['credentials_file'])
 
-    return create_json_record(issues, args['url'])
+    # source needs to not have the https:// prefix
+    return create_json_record(issues, args['url'].replace("https://",""))
 
 def create_json_record(issues, url):
     """
@@ -70,7 +71,6 @@ def create_json_record(issues, url):
          }
       }
     }
-    #return json.dumps(data)
     return data
 
 
