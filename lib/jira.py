@@ -58,13 +58,13 @@ def create_json_record(issues, url):
     """
     data = {
         "issues": {
-            "fixed": 
+            "fixed":
                 [{ "id": issue, "source": url }  for issue in issues]
         }
-    }                         
+    }
     #return json.dumps(data)
     return data
-    
+
 
 def parse_credentials_file(credentials_file):
     """
@@ -75,13 +75,12 @@ def parse_credentials_file(credentials_file):
     """
     # Open and read the JSON file
     with open(credentials_file, 'r') as file:
-        data = json.load(file)
+        data = file.read()
     return data
 
 
 def query_jira(jira_domain_url, jql_query, credentials_file):
-    credentials = parse_credentials_file(credentials_file)
-    api_token = credentials["api_token"]
+    api_token = parse_credentials_file(credentials_file)
 
     # Define the endpoint URL
     url = f'{jira_domain_url}/rest/api/2/search'

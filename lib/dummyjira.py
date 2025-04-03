@@ -16,8 +16,6 @@ output:
 
 import argparse
 import json
-import os
-import requests
 
 
 def dummy():
