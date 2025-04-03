@@ -3,16 +3,20 @@
 python lib/get_issue.py \
     tenant \
      --url https://issues.redhat.com \
-    --query 'project = KONFLUX AND status = "NEW"' \
-     --credentials-file ../cred-file.json
+     --query 'project = KONFLUX AND status = "NEW"' \
+     --credentials-file ../cred-file.json \
+     --release release.json \
+     --previousRelease previous_release.json
 
 output:
 {
-  "issues": {
-    "fixed": [
-      { "id": "CPAAS-1234", "source": "issues.redhat.com" },
-      { "id": "CPAAS-5678", "source": "issues.redhat.com" }
-    ]
+  "releaseNotes": {
+    "issues": {
+      "fixed": [
+        { "id": "CPAAS-1234", "source": "issues.redhat.com" },
+        { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+      ]
+    }
   }
 }
 """
@@ -33,8 +37,8 @@ def search_issues():
     parser.add_argument('-u', '--url', help='URL to Jira', required=True)
     parser.add_argument('-q', '--query', help='Jira qrl query', required=True)
     parser.add_argument('-c', '--credentials-file', help='Path to credentials file', required=True)
-    parser.add_argument('-r', '--release', help='Path to current Release json file', required=True)
-    parser.add_argument('-p', '--previousRelease', help='Path to previous Release json file', required=True)
+    parser.add_argument('-r', '--release', help='Path to current release file. Not used, supported to align the interface.', required=False)
+    parser.add_argument('-p', '--previousRelease', help='Path to previous release file. Not used, supported to align the interface.', required=False)
     args = vars(parser.parse_args())
 
     if (not os.path.isfile(args['credentials_file'])):
@@ -48,19 +52,23 @@ def search_issues():
 def create_json_record(issues, url):
     """
     {
-        "issues": {
+      "releaseNotes": {
+         "issues": {
             "fixed": [
                { "id": "CPAAS-1234", "source": "issues.redhat.com" },
                { "id": "CPAAS-5678", "source": "issues.redhat.com" }
             ]
-        }
+         }
+      }
     }
     """
     data = {
-        "issues": {
+      "releaseNotes": {
+         "issues": {
             "fixed":
                 [{ "id": issue, "source": url }  for issue in issues]
-        }
+         }
+      }
     }
     #return json.dumps(data)
     return data

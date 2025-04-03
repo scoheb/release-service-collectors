@@ -44,30 +44,73 @@ Example of credentials file:
 
 Example execution:
 ```
-$ python lib/get_issues.py <tenant/managed> \
-  --url https://issues.redhat.com
-  --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1'
-  --credentials-file /path/to/credentials.json
-["KONFLUX-1", "KONFLUX-2", "KONFLUX-3", ...]
+$ python lib/jira.py <tenant/managed> \
+  --url https://issues.redhat.com \
+  --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1' \
+  --credentials-file /path/to/credentials.json \
+  --release release.json \
+  --previousRelease previous_release.json 
+{
+  "releaseNotes": {
+    "issues": {
+      "fixed": [
+        { "id": "CPAAS-1234", "source": "issues.redhat.com" },
+        { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+      ]
+    }
+  }
+}
+
 ```
 
 ### CVE
 
-The CVE collector works by running the command against a git repository branch.
-It requires a git repository and a branch.
-The script returns the entries which inclue ^fix(CVE-XXX) in the git logs commites.
+The CVE collector works by running the command against a git repository.
+It requires 2 files currentRelease json file and previousRelease json file.
+The script retreive all the components from the currentRelease.
+It checks what CVEs where added to the git log between the current to previous release.
+and retrun all the relevant CVEs per component
 
 Example execution:
 ```
-$python lib/get_cve.py <tenant/managed> \
-  --git https://github.com/konflux-ci/konflux-ci.git
-  --branch main
+$python lib/cve.py <tenant/managed> \
+  --release release.json \
+  --previousRelease previous_release.json
+
 {
-    "cves":  [
-         { "key": "CVE-3444", "component": "my-component" },
-         { "key": "CVE-3445", "component": "my-component" }
-    ]
+    "releaseNotes": {
+        "cves":  [
+             { "key": "CVE-3444", "component": "my-component" },
+             { "key": "CVE-3445", "component": "my-component" }
+        ]
+    }
 }
+```
+
+### Convert YAML to JASON
+
+This script gets a yaml file with jinja2 code and convert to json data.
+This script doesn't run the jinja2 to render values.
+
+Example execution:
+```
+python lib/convertyaml.py \
+    tenant \
+    --git https://gitlab.cee.redhat.com/gnecasov/container-errata-templates.git \
+    --branch main \
+    --path RHEL/XXXXX.yaml \
+    --release release.json \
+    --previousRelease previous_release.json 
+
+
+{ "releaseNotes":
+    {
+        "synopsis": "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n", 
+        "solution": "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n",
+        "description": "{{Problem_description}}\n"
+    }
+}
+
 ```
 
 
