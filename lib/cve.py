@@ -13,9 +13,7 @@ import tempfile
 import re
 import subprocess
 import json
-import logging
 import sys
-from typing import Any
 
 pattern = r'CVE-\d+-\d+|CVE-\d+'
 
@@ -31,7 +29,7 @@ def find_cve():
     args = vars(parser.parse_args())
 
     if not os.path.isfile(args['release']):
-        print(f"ERROR: Path to release file {args['release']} doesn't exists")
+        log(f"ERROR: Path to release file {args['release']} doesn't exists")
         file_not_exists = 1
     if not os.path.isfile(args['previousRelease']):
         print.error(f"ERROR: Path to previousRelease file {args['previousRelease']} doesn't exists")
@@ -52,7 +50,7 @@ def read_json(file):
 def get_component_names(data_list):
     component_list = []
     for component_info in data_list:
-        print(f"component_info: {component_info}", file=sys.stderr)
+        log(f"component_info: {component_info}")
         for key, value in component_info.items():
             if (key == "name"):
                 component_list.append(value)
@@ -60,9 +58,9 @@ def get_component_names(data_list):
 
 
 def get_component_detail(data_list, component):
-    print(f"looking for component detail: {component}", file=sys.stderr)
+    log(f"looking for component detail: {component}")
     for component_info in data_list:
-        print(f"component_info: {components_info}", file=sys.stderr)
+        log(f"component_info: {components_info}")
         if component == component_info["name"]:
             return component_info["source"]["git"]["url"], component_info["source"]["git"]["revision"]
     return([])
@@ -72,17 +70,21 @@ def get_snapshot_data(namespace, snapshot):
     cmd = ["kubectl", "get", "snapshot", snapshot, "-n", namespace, "-ojson"]
     try:
         cmd_str = " ".join(cmd)
-        print(f"Running {cmd_str}", file=sys.stderr)
+        log(f"Running {cmd_str}")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError:
-        print(f"Command {cmd_str} failed, check exception for details", file=sys.stderr)
+        log(f"Command {cmd_str} failed, check exception for details")
         raise
     except Exception as exc:
-        print("Unknown error occurred", file=sys.stderr)
+        log("Unknown error occurred")
         raise RuntimeError from exc
 
-    print(result.stdout, file=sys.stderr)
+    log(result.stdout)
     return json.loads(result.stdout)
+
+
+def log(message):
+    print(message, file=sys.stderr)
 
 
 def get_snapshot_name(data_release):
@@ -104,9 +106,9 @@ def components_info(release, previousRelease):
         snapshot_ns = get_snapshot_namespace(data_release)
         snapshot_data = get_snapshot_data(snapshot_ns, snapshot_name)
         current_component_list = snapshot_data['spec']['components']
-        print(current_component_list, file=sys.stderr)
+        log(current_component_list)
     else:
-        print(f"Empty release file {release}", file=sys.stderr)
+        log(f"Empty release file {release}")
         exit(0)
 
     if data_prev_release:
@@ -115,18 +117,18 @@ def components_info(release, previousRelease):
         prev_component_list = snapshot_prev_release_data['spec']['components']
 
     current_components = get_component_names(current_component_list)
-    print(f"current_components: {current_components}", file=sys.stderr)
+    log(f"current_components: {current_components}")
     prev_components = get_component_names(prev_component_list)
-    print(f"prev_components: {prev_components}", file=sys.stderr)
+    log(f"prev_components: {prev_components}")
 
     for component in current_components:
         (url_current, revision_current) = get_component_detail(current_component_list, component)
-        print(f"url_current: {url_current}", file=sys.stderr)
-        print(f"revision_current: {revision_current}", file=sys.stderr)
+        log(f"url_current: {url_current}")
+        log(f"revision_current: {revision_current}")
         if component in prev_components:
             (url_prev, revision_prev) = get_component_detail(prev_component_list, component)
-            print(f"url_prev: {url_prev}", file=sys.stderr)
-            print(f"revision_prev: {revision_prev}", file=sys.stderr)
+            log(f"url_prev: {url_prev}")
+            log(f"revision_prev: {revision_prev}")
             cves[component] = git_log_titles_per_component(url_current, revision_current, revision_prev)
         else:
             cves[component] = git_log_titles_per_component(url_current, revision_current, "")
@@ -137,16 +139,16 @@ def git_log_titles_per_component(git_url, revision_current, revision_prev):
     tmpdir = tempfile.mkdtemp()
     git_cmd = ["git", "clone", git_url, tmpdir]
     cmd_str = " ".join(git_cmd)
-    print(f"Running {cmd_str}", file=sys.stderr)
+    log(f"Running {cmd_str}")
     result = subprocess.run(git_cmd, check=True, capture_output=True, text=True)
     if result.returncode != 0:
-        print("Something went wrong cloning, details below:", file=sys.stderr)
-        print(f"Command: '{' '.join(git_cmd)}'", file=sys.stderr)
-        print(f"Stdout: '{result.stdout}'", file=sys.stderr)
-        print(f"Stderr: '{result.stderr}'", file=sys.stderr)
+        log("Something went wrong cloning, details below:")
+        log(f"Command: '{' '.join(git_cmd)}'")
+        log(f"Stdout: '{result.stdout}'")
+        log(f"Stderr: '{result.stderr}'")
         exit(result.returncode)
 
-    print(f"Stdout: '{result.stdout}'", file=sys.stderr)
+    log(f"Stdout: '{result.stdout}'")
     os.chdir(tmpdir)
 
     if revision_prev and revision_current != revision_prev:
@@ -155,16 +157,16 @@ def git_log_titles_per_component(git_url, revision_current, revision_prev):
         git_cmd = ["git", "show", "--quiet", f"{revision_current}"]
 
     cmd_str = " ".join(git_cmd)
-    print(f"Running {cmd_str}", file=sys.stderr)
+    log(f"Running {cmd_str}")
     result = subprocess.run(git_cmd, check=True, capture_output=True, text=True)
     if result.returncode != 0:
-        print("Something went wrong cloning, details below:", file=sys.stderr)
-        print(f"Command: '{' '.join(git_cmd)}'", file=sys.stderr)
-        print(f"Stdout: '{result.stdout}'", file=sys.stderr)
-        print(f"Stderr: '{result.stderr}'", file=sys.stderr)
+        log("Something went wrong cloning, details below:")
+        log(f"Command: '{' '.join(git_cmd)}'")
+        log(f"Stdout: '{result.stdout}'")
+        log(f"Stderr: '{result.stderr}'")
         exit(result.returncode)
 
-    print(f"Stdout: '{result.stdout}'", file=sys.stderr)
+    log(f"Stdout: '{result.stdout}'")
     return find_log_titles(result.stdout)
 
 
@@ -204,7 +206,7 @@ def create_cves_record(cves):
 
     if cves:
 
-        print(cves, file=sys.stderr)
+        log(cves)
         for comp_name, keys in cves.items():
             for key in keys:
                 result["releaseNotes"]["cves"].append({
