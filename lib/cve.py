@@ -32,7 +32,7 @@ def find_cve():
         log(f"ERROR: Path to release file {args['release']} doesn't exists")
         file_not_exists = 1
     if not os.path.isfile(args['previousRelease']):
-        print.error(f"ERROR: Path to previousRelease file {args['previousRelease']} doesn't exists")
+        log(f"ERROR: Path to previousRelease file {args['previousRelease']} doesn't exists")
         file_not_exists = 1
     if file_not_exists:
         exit(1)
@@ -57,12 +57,32 @@ def get_component_names(data_list):
     return component_list
 
 
+def get_component_info_key(source_git_info, key):
+    if "source" in source_git_info:
+        source = source_git_info["source"]
+        if "git" in source:
+            gitsource = source_git_info["source"]["git"]
+            if key in source["git"]:
+                return gitsource[key]
+            else:
+                log(f"Error: missing '{key}' key in {gitsource}")
+                exit(1)
+        else:
+            log(f"Error: missing 'git' key in {source}")
+            exit(1)
+    else:
+        log(f"Error: missing 'source' key in {source_git_info}")
+        exit(1)
+
+
 def get_component_detail(data_list, component):
     log(f"looking for component detail: {component}")
     for component_info in data_list:
         log(f"component_info: {components_info}")
         if component == component_info["name"]:
-            return component_info["source"]["git"]["url"], component_info["source"]["git"]["revision"]
+            return (get_component_info_key(component_info, "url"),
+                    get_component_info_key(component_info, "revision"))
+    log(f"WARNING: unable to find component detail for component {component}")
     return([])
 
 
@@ -88,11 +108,29 @@ def log(message):
 
 
 def get_snapshot_name(data_release):
-    return data_release['spec']['snapshot']
+    if "spec" in data_release:
+        spec = data_release["spec"]
+        if "snapshot" in spec:
+            return spec["snapshot"]
+        else:
+            log(f"Error: missing 'snapshot' key in {spec}")
+            exit(1)
+    else:
+        log(f"Error: missing 'spec' key in {data_release}")
+        exit(1)
 
 
 def get_snapshot_namespace(data_release):
-    return data_release['metadata']['namespace']
+    if "metadata" in data_release:
+        metadata = data_release["metadata"]
+        if "namespace" in metadata:
+            return metadata["namespace"]
+        else:
+            log(f"Error: missing 'namespace' key in {metadata}")
+            exit(1)
+    else:
+        log(f"Error: missing 'metadata' key in {data_release}")
+        exit(1)
 
 
 def components_info(release, previousRelease):
@@ -106,10 +144,9 @@ def components_info(release, previousRelease):
         snapshot_ns = get_snapshot_namespace(data_release)
         snapshot_data = get_snapshot_data(snapshot_ns, snapshot_name)
         current_component_list = snapshot_data['spec']['components']
-        log(current_component_list)
     else:
         log(f"Empty release file {release}")
-        exit(0)
+        exit(1)
 
     if data_prev_release:
         snapshot_prev_release_name = get_snapshot_name(data_prev_release)
@@ -142,7 +179,7 @@ def git_log_titles_per_component(git_url, revision_current, revision_prev):
     log(f"Running {cmd_str}")
     result = subprocess.run(git_cmd, check=True, capture_output=True, text=True)
     if result.returncode != 0:
-        log("Something went wrong cloning, details below:")
+        log("Something went wrong during the git operation, details below:")
         log(f"Command: '{' '.join(git_cmd)}'")
         log(f"Stdout: '{result.stdout}'")
         log(f"Stderr: '{result.stderr}'")
@@ -160,7 +197,7 @@ def git_log_titles_per_component(git_url, revision_current, revision_prev):
     log(f"Running {cmd_str}")
     result = subprocess.run(git_cmd, check=True, capture_output=True, text=True)
     if result.returncode != 0:
-        log("Something went wrong cloning, details below:")
+        log("Something went wrong during the git operation, details below:")
         log(f"Command: '{' '.join(git_cmd)}'")
         log(f"Stdout: '{result.stdout}'")
         log(f"Stderr: '{result.stderr}'")
@@ -206,7 +243,7 @@ def create_cves_record(cves):
 
     if cves:
 
-        log(cves)
+        log(f"Found CVEs: {cves}")
         for comp_name, keys in cves.items():
             for key in keys:
                 result["releaseNotes"]["cves"].append({
@@ -214,8 +251,9 @@ def create_cves_record(cves):
                     "component": comp_name
                 })
 
-    return json.dumps(result)
+    return result
 
 
 if __name__ == "__main__":
-    print(find_cve())
+    return_cves = find_cve()
+    print(json.dumps(return_cves))

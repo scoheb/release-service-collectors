@@ -30,27 +30,34 @@ import subprocess
 import requests
 
 
-def read_json(file):
-    if os.path.getsize(file) > 0:
-        with open(file, 'r') as f:
+def read_json(file_name):
+    if os.path.getsize(file_name) > 0:
+        with open(file_name, 'r') as f:
             data = json.load(f)
         return data
+    else:
+        print(f"Error: Empty file {file_name}")
+        exit(1)
 
 
 def get_release_namespace(data_release):
+    if "namespace" not in data_release['metadata']:
+        print("Error: resource does not contain the '.metadata.namespace' key")
+        exit(1)
+
     return data_release['metadata']['namespace']
 
 
-def get_namespace_from_release(release):
+def get_namespace_from_release(release_json_file):
 
-    data_release = read_json(release)
+    data_release = read_json(release_json_file)
 
     if not data_release:
-        log(f"Empty release file {release}")
+        log(f"Empty release file {release_json_file}")
         exit(0)
 
     ns = get_release_namespace(data_release)
-    log(f"Namespace: {ns}")
+    log(f"Namespace extracted from file {release_json_file}: {ns}")
     return ns
 
 
@@ -63,7 +70,7 @@ def search_issues():
     )
     parser.add_argument('-u', '--url', help='URL to Jira', required=True)
     parser.add_argument('-q', '--query', help='Jira qrl query', required=True)
-    parser.add_argument('-s', '--secretName', help='Name of k8s secret that hold JIRA credentials with an apitoken key', required=True)
+    parser.add_argument('-s', '--secretName', help='Name of k8s secret that holds JIRA credentials with an apitoken key', required=True)
     parser.add_argument('-r', '--release', help='Path to current release file. Not used, supported to align the interface.', required=True)
     parser.add_argument('-p', '--previousRelease', help='Path to previous release file. Not used, supported to align the interface.', required=False)
     args = vars(parser.parse_args())
@@ -106,20 +113,25 @@ def create_json_record(issues, url):
 
 
 def get_secret_data(namespace, secret_name):
-    log(f"secret_name: {secret_name}")
+    log(f"Getting secret: {secret_name}")
     cmd = ["kubectl", "get", "secret", secret_name, "-n", namespace, "-ojson"]
     try:
         cmd_str = " ".join(cmd)
-        log(f"Running {cmd_str}")
+        log(f"Running '{cmd_str}'")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError:
-        log(f"Command {cmd_str} failed, check exception for details")
+        log(f"Command '{cmd_str}' failed, check exception for details")
         raise
     except Exception as exc:
-        log("Unknown error occurred")
+        log(f"Warning: Unknown error occurred when running command '{cmd_str}'")
         raise RuntimeError from exc
 
-    secret = json.loads(result.stdout)["data"]["apitoken"]
+    secret_data = json.loads(result.stdout)
+    if "apitoken" not in secret_data["data"]:
+        print("Error: secret does not contain the 'apitoken' key")
+        exit(1)
+
+    secret = secret_data["data"]["apitoken"]
 
     return base64.b64decode(secret).decode("utf-8")
 
