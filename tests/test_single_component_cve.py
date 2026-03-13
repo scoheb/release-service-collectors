@@ -95,7 +95,7 @@ def test_create_cves_record_single_component():
     """Test CVE record creation for a single component."""
     cves = {'my-component': ['CVE-2024-1234', 'CVE-2024-5678']}
     result = create_cves_record(cves)
-    
+
     expected = {
         "releaseNotes": {
             "cves": [
@@ -140,6 +140,66 @@ def test_git_log_titles_single_component(monkeypatch):
     assert "CVE-2024-1234" in titles
     assert "CVE-2024-5678" in titles
     assert len(titles) == 2
+
+
+def test_git_log_with_context_filter(monkeypatch):
+    """Test git log filters commits by context (subdirectory) path."""
+    git_url = "https://example.com/monorepo"
+    revision_current = "abc123"
+    revision_prev = "def456"
+    secret_data = {}
+    context = "components/my-app"
+    captured_cmd = []
+
+    def mock_subprocess_run(cmd, check, capture_output, text, env={}):
+        nonlocal captured_cmd
+        if "clone" in cmd:
+            return MockCompletedProcess(returncode=0, stdout="", stderr="")
+        if "log" in cmd:
+            captured_cmd = cmd
+            return MockCompletedProcess(
+                returncode=0,
+                stdout="fix: CVE-2024-1234 security patch",
+                stderr=""
+            )
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    titles = git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data, context)
+
+    # Verify the context path was added to git log command
+    assert "--" in captured_cmd
+    assert context in captured_cmd
+    assert "CVE-2024-1234" in titles
+
+
+def test_git_log_without_context(monkeypatch):
+    """Test git log works without context (no path filter)."""
+    git_url = "https://example.com/monorepo"
+    revision_current = "abc123"
+    revision_prev = "def456"
+    secret_data = {}
+    captured_cmd = []
+
+    def mock_subprocess_run(cmd, check, capture_output, text, env={}):
+        nonlocal captured_cmd
+        if "clone" in cmd:
+            return MockCompletedProcess(returncode=0, stdout="", stderr="")
+        if "log" in cmd:
+            captured_cmd = cmd
+            return MockCompletedProcess(
+                returncode=0,
+                stdout="fix: CVE-2024-5678 another fix",
+                stderr=""
+            )
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    titles = git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data, context=None)
+
+    # Verify no path filter was added
+    assert "--" not in captured_cmd
+    assert "CVE-2024-5678" in titles
 
 
 def test_single_component_only_clones_once(monkeypatch):

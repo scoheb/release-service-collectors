@@ -103,7 +103,14 @@ def read_json(file):
         return data
 
 
-def get_component_info_key(source_git_info, key):
+def get_component_info_key(source_git_info, key, required=True):
+    """Get a key from the component's source.git section.
+
+    Args:
+        source_git_info: The component info dict
+        key: The key to retrieve (e.g., 'url', 'revision', 'context')
+        required: If True, exit on missing key. If False, return None.
+    """
     if "source" in source_git_info:
         source = source_git_info["source"]
         if "git" in source:
@@ -111,25 +118,38 @@ def get_component_info_key(source_git_info, key):
             if key in source["git"]:
                 return gitsource[key]
             else:
-                log(f"Error: missing '{key}' key in {gitsource}")
-                exit(1)
+                if required:
+                    log(f"Error: missing '{key}' key in {gitsource}")
+                    exit(1)
+                return None
         else:
-            log(f"Error: missing 'git' key in {source}")
-            exit(1)
+            if required:
+                log(f"Error: missing 'git' key in {source}")
+                exit(1)
+            return None
     else:
-        log(f"Error: missing 'source' key in {source_git_info}")
-        exit(1)
+        if required:
+            log(f"Error: missing 'source' key in {source_git_info}")
+            exit(1)
+        return None
 
 
 def get_component_detail(data_list, component):
+    """Get component details including url, revision, and optional context.
+
+    Returns:
+        Tuple of (url, revision, context) where context may be None if not specified.
+    """
     log(f"looking for component detail: {component}")
     for component_info in data_list:
         log(f"component_info: {component_info}")
         if component == component_info["name"]:
-            return (get_component_info_key(component_info, "url"),
-                    get_component_info_key(component_info, "revision"))
+            url = get_component_info_key(component_info, "url")
+            revision = get_component_info_key(component_info, "revision")
+            context = get_component_info_key(component_info, "context", required=False)
+            return (url, revision, context)
     log(f"WARNING: unable to find component detail for component {component}")
-    return []
+    return None
 
 
 def get_snapshot_data(namespace, snapshot):
@@ -181,21 +201,21 @@ def get_snapshot_namespace(data_release):
 
 def get_single_component_from_snapshot(snapshot_data):
     """Extract the single component name from snapshot labels.
-    
+
     Returns the component name if the snapshot was created for a single component build,
     or None if the snapshot doesn't have the required labels.
     """
     labels = snapshot_data.get("metadata", {}).get("labels", {})
-    
+
     snapshot_type = labels.get("test.appstudio.openshift.io/type", "")
     component_name = labels.get("appstudio.openshift.io/component", "")
-    
+
     log(f"Snapshot type label: {snapshot_type}")
     log(f"Component label: {component_name}")
-    
+
     if snapshot_type == "component" and component_name:
         return component_name
-    
+
     return None
 
 
@@ -216,7 +236,7 @@ def single_component_info(release, previousRelease, secret_data):
 
     # Get the single component from snapshot labels
     single_component = get_single_component_from_snapshot(snapshot_data)
-    
+
     if not single_component:
         log("WARNING: Snapshot does not have single component labels.")
         log("Expected labels: test.appstudio.openshift.io/type=component and appstudio.openshift.io/component=<name>")
@@ -227,7 +247,7 @@ def single_component_info(release, previousRelease, secret_data):
 
     # Filter current component list to only the single component
     filtered_current = [c for c in current_component_list if c.get("name") == single_component]
-    
+
     if not filtered_current:
         log(f"ERROR: Component '{single_component}' not found in snapshot components")
         log(f"Available components: {[c.get('name') for c in current_component_list]}")
@@ -250,22 +270,29 @@ def single_component_info(release, previousRelease, secret_data):
     if not detail:
         log(f"ERROR: Could not get details for component {component}")
         exit(1)
-    
-    url_current, revision_current = detail
+
+    url_current, revision_current, context = detail
     log(f"url_current: {url_current}")
     log(f"revision_current: {revision_current}")
+    log(f"context: {context}")
 
     if component in prev_component_names:
         prev_detail = get_component_detail(filtered_prev, component)
         if prev_detail:
-            url_prev, revision_prev = prev_detail
+            url_prev, revision_prev, _ = prev_detail
             log(f"url_prev: {url_prev}")
             log(f"revision_prev: {revision_prev}")
-            cves[component] = git_log_titles_per_component(url_current, revision_current, revision_prev, secret_data)
+            cves[component] = git_log_titles_per_component(
+                url_current, revision_current, revision_prev, secret_data, context
+            )
         else:
-            cves[component] = git_log_titles_per_component(url_current, revision_current, "", secret_data)
+            cves[component] = git_log_titles_per_component(
+                url_current, revision_current, "", secret_data, context
+            )
     else:
-        cves[component] = git_log_titles_per_component(url_current, revision_current, "", secret_data)
+        cves[component] = git_log_titles_per_component(
+            url_current, revision_current, "", secret_data, context
+        )
 
     return create_cves_record(cves)
 
@@ -321,7 +348,16 @@ def clone_repo_if_needed(git_url, secret_data):
     return tmpdir
 
 
-def git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data):
+def git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data, context=None):
+    """Get CVEs from git log for a component.
+
+    Args:
+        git_url: The git repository URL
+        revision_current: Current commit revision
+        revision_prev: Previous commit revision (empty string if none)
+        secret_data: Secret data for SSH authentication
+        context: Optional subdirectory path to filter commits (e.g., 'components/my-app')
+    """
     repo_dir = clone_repo_if_needed(git_url, secret_data)
     os.chdir(repo_dir)
 
@@ -331,6 +367,11 @@ def git_log_titles_per_component(git_url, revision_current, revision_prev, secre
         git_cmd = ["git", "log", "--format=%s%n%b", f"{revision_prev}..{revision_current}"]
     else:
         git_cmd = ["git", "show", "--quiet", "--format=%s%n%b", f"{revision_current}"]
+
+    # Filter to only commits affecting the component's context (subdirectory)
+    if context:
+        log(f"Filtering git log to context path: {context}")
+        git_cmd.extend(["--", context])
 
     cmd_str = " ".join(git_cmd)
     log(f"Running {cmd_str}")
