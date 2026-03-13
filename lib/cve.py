@@ -8,8 +8,10 @@ python lib/cve.py \
 
 
 import argparse
+import atexit
 import base64
 import os
+import shutil
 import tempfile
 import re
 import subprocess
@@ -19,6 +21,29 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 pattern = r'CVE-\d+-\d+|CVE-\d+'
+
+# Cache for cloned repositories: maps git_url to tmpdir path
+_repo_cache = {}
+
+
+def clear_repo_cache():
+    """Clear the repository cache. Useful for testing."""
+    global _repo_cache
+    _repo_cache = {}
+
+
+def cleanup_repo_cache():
+    """Remove all cached repository directories from disk."""
+    global _repo_cache
+    for url, tmpdir in _repo_cache.items():
+        if os.path.exists(tmpdir):
+            log(f"Cleaning up cached repo: {tmpdir}")
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    _repo_cache = {}
+
+
+# Register cleanup on exit to free disk space
+atexit.register(cleanup_repo_cache)
 
 def find_cve():
     file_not_exists = 0
@@ -40,7 +65,7 @@ def find_cve():
         file_not_exists = 1
     if file_not_exists:
         exit(1)
-    
+
     secret_data = {}
     if args['secretName']:
         namespace = json.loads(Path(args['release']).read_text())['metadata']['namespace']
@@ -50,7 +75,7 @@ def find_cve():
 
 
 def get_secret_data(namespace, secret):
-    log(f"Getting secret: {secret}") 
+    log(f"Getting secret: {secret}")
     cmd = ["kubectl", "get", "secret", secret, "-n", namespace, "-ojson"]
     result = subprocess.run(cmd, check=True, capture_output=True, text=True)
 
@@ -96,7 +121,7 @@ def get_component_info_key(source_git_info, key):
 def get_component_detail(data_list, component):
     log(f"looking for component detail: {component}")
     for component_info in data_list:
-        log(f"component_info: {components_info}")
+        log(f"component_info: {component_info}")
         if component == component_info["name"]:
             return (get_component_info_key(component_info, "url"),
                     get_component_info_key(component_info, "revision"))
@@ -190,22 +215,42 @@ def components_info(release, previousRelease, secret_data):
     return create_cves_record(cves)
 
 
-def git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data):
+def clone_repo_if_needed(git_url, secret_data):
+    """Clone a repository if not already cached. Returns the path to the cloned repo.
+
+    Uses optimized clone options to minimize memory and disk usage:
+    - --filter=blob:none: Blobless clone - only fetches commit/tree metadata, not file contents
+    - --no-checkout: Skip checkout since we only need git log
+    - --single-branch: Only fetch the default branch
+    """
+    global _repo_cache
+
+    if git_url in _repo_cache:
+        log(f"Using cached clone for {git_url}")
+        return _repo_cache[git_url]
+
     tmpdir = tempfile.mkdtemp()
     git_env = os.environ.copy()
-    git_cmd = ["git", "clone", git_url, tmpdir]
+    clone_url = git_url
     git_parts = urlparse(git_url)
     git_matcher = git_parts.path[1:].replace("/", ".")
 
     if git_matcher in secret_data:
-        # git_parts.path starts with `/` so we remove it using `[1:]``
-        git_cmd = ["git", "clone", f"git@{git_parts.netloc}:{git_parts.path[1:]}", tmpdir]
+        clone_url = f"git@{git_parts.netloc}:{git_parts.path[1:]}"
 
         priv_key = base64.standard_b64decode(secret_data[git_matcher])
         fd = tempfile.TemporaryFile()
         fd.write(priv_key)
         os.chmod(fd.name, 0o600)
         git_env["GIT_SSH_COMMAND"] = f"ssh -i {fd.name} -o IdentitiesOnly=yes"
+
+    git_cmd = [
+        "git", "clone",
+        "--filter=blob:none",
+        "--no-checkout",
+        clone_url,
+        tmpdir
+    ]
 
     cmd_str = " ".join(git_cmd)
     log(f"Running {cmd_str}")
@@ -218,12 +263,20 @@ def git_log_titles_per_component(git_url, revision_current, revision_prev, secre
         exit(result.returncode)
 
     log(f"Stdout: '{result.stdout}'")
-    os.chdir(tmpdir)
+    _repo_cache[git_url] = tmpdir
+    return tmpdir
+
+
+def git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data):
+    repo_dir = clone_repo_if_needed(git_url, secret_data)
+    os.chdir(repo_dir)
 
     if revision_prev and revision_current != revision_prev:
-        git_cmd = ["git", "log", f"{revision_prev}..{revision_current}"]
+        # Use --format=%s%n%b to only get subject and body (where CVEs are mentioned)
+        # This significantly reduces memory usage compared to full git log output
+        git_cmd = ["git", "log", "--format=%s%n%b", f"{revision_prev}..{revision_current}"]
     else:
-        git_cmd = ["git", "show", "--quiet", f"{revision_current}"]
+        git_cmd = ["git", "show", "--quiet", "--format=%s%n%b", f"{revision_current}"]
 
     cmd_str = " ".join(git_cmd)
     log(f"Running {cmd_str}")

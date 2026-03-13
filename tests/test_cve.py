@@ -2,7 +2,15 @@ import pytest
 import subprocess
 from pathlib import Path
 from lib.cve import components_info, create_cves_record
-from lib.cve import git_log_titles_per_component
+from lib.cve import git_log_titles_per_component, clear_repo_cache, cleanup_repo_cache
+
+
+@pytest.fixture(autouse=True)
+def reset_repo_cache():
+    """Clear the repo cache before each test to ensure isolation."""
+    clear_repo_cache()
+    yield
+    cleanup_repo_cache()
 
 mock_input =  {'comp1': ['CVE-1', 'CVE-3'],'comp2': ['CVE-2', 'CVE-4']}
 mock_result_good = {"releaseNotes": {"cves": [{"key": "CVE-1", "component": "comp1"},
@@ -83,11 +91,14 @@ def test_get_log_titles_per_component_with_replacement(monkeypatch):
     def mock_subprocess_run(cmd, check, capture_output, text, env={}):
         if "clone" in cmd:
             assert "git@" in " ".join(cmd)
+            assert "--filter=blob:none" in cmd
+            assert "--no-checkout" in cmd
             assert "GIT_SSH_COMMAND" in env
             return MockCompletedProcess(returncode=0, stdout="", stderr="")
         if "log" in cmd:
             assert revision_current in " ".join(cmd)
             assert revision_prev in " ".join(cmd)
+            assert "--format=%s%n%b" in cmd
             return MockCompletedProcess(returncode=0, stdout="CVE-1234 fixed", stderr="")
 
     monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
@@ -104,16 +115,42 @@ def test_get_log_titles_per_component_with_no_replacement(monkeypatch):
     def mock_subprocess_run(cmd, check, capture_output, text, env={}):
         if "clone" in cmd:
             assert git_url in " ".join(cmd)
+            assert "--filter=blob:none" in cmd
+            assert "--no-checkout" in cmd
             assert "GIT_SSH_COMMAND" not in env
             return MockCompletedProcess(returncode=0, stdout="", stderr="")
         if "log" in cmd:
             assert revision_current in " ".join(cmd)
             assert revision_prev in " ".join(cmd)
+            assert "--format=%s%n%b" in cmd
             return MockCompletedProcess(returncode=0, stdout="CVE-1234 fixed", stderr="")
 
     monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
 
     titles = git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data)
     assert "CVE-1234" in titles
+
+
+def test_repo_caching_avoids_duplicate_clones(monkeypatch):
+    """Test that multiple components from the same repo only clone once."""
+    git_url = "https://example.com/monorepo"
+    secret_data = {}
+    clone_count = 0
+
+    def mock_subprocess_run(cmd, check, capture_output, text, env={}):
+        nonlocal clone_count
+        if "clone" in cmd:
+            clone_count += 1
+            return MockCompletedProcess(returncode=0, stdout="", stderr="")
+        if "log" in cmd or "show" in cmd:
+            return MockCompletedProcess(returncode=0, stdout="CVE-9999 fixed", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    git_log_titles_per_component(git_url, "rev1", "rev0", secret_data)
+    git_log_titles_per_component(git_url, "rev2", "rev1", secret_data)
+    git_log_titles_per_component(git_url, "rev3", "rev2", secret_data)
+
+    assert clone_count == 1, f"Expected 1 clone, but got {clone_count}"
 
 
